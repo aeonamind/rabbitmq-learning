@@ -1,0 +1,103 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - 5672:5672
+      - 15672:15672
+    networks:
+      - rabbitmq_learning_net
+    healthcheck:
+      test: rabbitmq-diagnostics check_port_connectivity
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+    networks:
+      - rabbitmq_learning_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  fake-victim:
+    init: true
+    build:
+      dockerfile: ./apps/fake-victim/Dockerfile
+      context: .
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    networks:
+      - rabbitmq_learning_net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  orchestrator:
+    init: true
+    build:
+      dockerfile: ./apps/orchestrator/Dockerfile
+      context: .
+    ports:
+      - 4000:4000
+    restart: unless-stopped
+    env_file:
+      - ./apps/orchestrator/.env.prod
+    networks:
+      - rabbitmq_learning_net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    init: true
+    build:
+      dockerfile: ./apps/worker/Dockerfile
+      context: .
+    restart: unless-stopped
+    env_file:
+      - ./apps/worker/.env.prod
+    deploy:
+      replicas: 10
+    networks:
+      - rabbitmq_learning_net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  token-scraper:
+    init: true
+    build:
+      dockerfile: ./apps/token-scraper/Dockerfile
+      context: .
+    restart: unless-stopped
+    env_file:
+      - ./apps/token-scraper/.env.prod
+    networks:
+      - rabbitmq_learning_net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+
+networks:
+  rabbitmq_learning_net:
+    driver: bridge
